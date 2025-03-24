@@ -1,72 +1,59 @@
 pipeline {
     agent any
-    
     environment {
         LABS = credentials('lab')
-        JAVA_HOME = '/opt/bitnami/java' // Set JAVA_HOME
-        PATH = "${env.JAVA_HOME}/bin:${env.PATH}" // Add Java to PATH
+        JAVA_HOME = '/opt/bitnami/java'
+        PATH = "${env.JAVA_HOME}/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:${env.HOME}/.local/bin"
     }
-    
     stages {
-        stage('Checkout Code') {
-            steps {
-                checkout scm
-            }
-        }
-        
         stage('Setup Virtual Environment') {
             steps {
                 script {
-                    sh '''
-                    rm -rf retail_pipeline_venv  # Remove old virtual environment
-                    python3 -m venv retail_pipeline_venv
-                    ./retail_pipeline_venv/bin/python -m ensurepip
-                    ./retail_pipeline_venv/bin/python -m pip install --upgrade pip
-                    ./retail_pipeline_venv/bin/python -m pip install pipenv
-                    '''
+                    // Ensure pip is installed
+                    sh 'python3 -m ensurepip --default-pip'
+                    // Upgrade pip and install pipenv
+                    sh 'python3 -m pip install --upgrade pip'
+                    sh 'python3 -m pip install --user pipenv'
+                    // Create a virtual environment with the project name
+                    sh 'python3 -m venv retail_pipeline_venv'
+                    // Activate the virtual environment
+                    sh '. ./retail_pipeline_venv/bin/activate'
+                    // Upgrade pip within the virtual environment
+                    sh 'pip install --upgrade pip'
+                    // Install pipenv within the virtual environment
+                    sh 'pip install pipenv'
                 }
             }
         }
-        
         stage('Install Dependencies') {
             steps {
                 script {
-                    sh '''
-                    ./retail_pipeline_venv/bin/pipenv --python $(which python3)  # Ensure correct Python version
-                    ./retail_pipeline_venv/bin/pipenv install --dev
-                    '''
+                    // Install project dependencies
+                    sh './retail_pipeline_venv/bin/pipenv install'
                 }
             }
         }
-        
-        stage('Run Tests') {
+        stage('Test') {
             steps {
                 script {
-                    sh '''
-                    echo "Using JAVA_HOME: $JAVA_HOME"
-                    echo "Using PATH: $PATH"
-                    ./retail_pipeline_venv/bin/pipenv run pytest
-                    '''
+                    // Ensure JAVA_HOME is set for PySpark to work
+                    sh 'echo Using JAVA_HOME: $JAVA_HOME'
+                    sh 'echo Using PATH: $PATH'
+                    // Run tests
+                    sh './retail_pipeline_venv/bin/pipenv run pytest'
                 }
             }
         }
-        
-        stage('Package Application') {
+        stage('Package') {
             steps {
-                script {
-                    sh 'zip -r retailproject.zip . -x "retail_pipeline_venv/*"'
-                }
+                // Create the zip file but exclude the venv directory
+                sh 'zip -r retailproject.zip . -x "retail_pipeline_venv/*"'
             }
         }
-        
-        stage('Deploy to Server') {
+        stage('Deploy') {
             steps {
-                script {
-                    sh '''
-                    sshpass -p "$LABS_PSW" scp -o StrictHostKeyChecking=no -r \
-                    retailproject.zip "$LABS_USR"@g01.itversity.com:/home/itv013301/retailproject
-                    '''
-                }
+                // Add deployment steps here
+                sh 'sshpass -p $LABS_PSW scp -o StrictHostKeyChecking=no -r retailproject.zip $LABS_USR@g02.itversity.com:/home/itv013301/retailproject'
             }
         }
     }
