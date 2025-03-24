@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        LABS = credentials('lab')
+        JAVA_HOME = '/opt/bitnami/java'
+        PATH = "${env.JAVA_HOME}/bin:${env.PATH}"
+    }
+
+    stages {
+        stage('Setup Virtual Environment') {
+            steps {
+                script {
+                    sh '''
+                    # Remove existing virtual environment if it exists
+                    rm -rf retail_pipeline_venv
+
+                    # Create a virtual environment
+                    python3 -m venv retail_pipeline_venv
+
+                    # Activate virtual environment and upgrade pip inside it
+                    ./retail_pipeline_venv/bin/python -m pip install --upgrade pip
+                    ./retail_pipeline_venv/bin/python -m pip install pipenv
+                    '''
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    sh './retail_pipeline_venv/bin/pipenv install'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                script {
+                    sh 'echo $JAVA_HOME'
+                    sh 'echo $PATH'
+                    sh './retail_pipeline_venv/bin/pipenv run pytest'
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                script {
+                    sh 'zip -r retailproject.zip . -x "retail_pipeline_venv/*"'
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    sh '''
+                    sshpass -p "$LABS_PSW" scp -o StrictHostKeyChecking=no -r \
+                    retailproject.zip "$LABS_USR"@g02.itversity.com:/home/itv013301/retailproject
+                    '''
+                }
+            }
+        }
+    }
+}
