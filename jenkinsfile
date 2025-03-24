@@ -1,63 +1,70 @@
 pipeline {
     agent any
-
+    
     environment {
         LABS = credentials('lab')
-        JAVA_HOME = '/opt/bitnami/java'
-        PATH = "${env.JAVA_HOME}/bin:${env.PATH}"
+        JAVA_HOME = '/opt/bitnami/java' // Set JAVA_HOME
+        PATH = "${env.JAVA_HOME}/bin:${env.PATH}" // Add Java to PATH
     }
-
+    
     stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+        
         stage('Setup Virtual Environment') {
             steps {
                 script {
                     sh '''
-                    # Remove existing virtual environment if it exists
-                    rm -rf retail_pipeline_venv
-
-                    # Create a virtual environment
+                    rm -rf retail_pipeline_venv  # Remove old virtual environment
                     python3 -m venv retail_pipeline_venv
-
-                    # Activate virtual environment and upgrade pip inside it
+                    ./retail_pipeline_venv/bin/python -m ensurepip
                     ./retail_pipeline_venv/bin/python -m pip install --upgrade pip
                     ./retail_pipeline_venv/bin/python -m pip install pipenv
                     '''
                 }
             }
         }
-
+        
         stage('Install Dependencies') {
             steps {
                 script {
-                    sh './retail_pipeline_venv/bin/pipenv install'
+                    sh '''
+                    ./retail_pipeline_venv/bin/pipenv --python $(which python3)  # Ensure correct Python version
+                    ./retail_pipeline_venv/bin/pipenv install --dev
+                    '''
                 }
             }
         }
-
-        stage('Test') {
+        
+        stage('Run Tests') {
             steps {
                 script {
-                    sh 'echo $JAVA_HOME'
-                    sh 'echo $PATH'
-                    sh './retail_pipeline_venv/bin/pipenv run pytest'
+                    sh '''
+                    echo "Using JAVA_HOME: $JAVA_HOME"
+                    echo "Using PATH: $PATH"
+                    ./retail_pipeline_venv/bin/pipenv run pytest
+                    '''
                 }
             }
         }
-
-        stage('Package') {
+        
+        stage('Package Application') {
             steps {
                 script {
                     sh 'zip -r retailproject.zip . -x "retail_pipeline_venv/*"'
                 }
             }
         }
-
-        stage('Deploy') {
+        
+        stage('Deploy to Server') {
             steps {
                 script {
                     sh '''
                     sshpass -p "$LABS_PSW" scp -o StrictHostKeyChecking=no -r \
-                    retailproject.zip "$LABS_USR"@g02.itversity.com:/home/itv013301/retailproject
+                    retailproject.zip "$LABS_USR"@g01.itversity.com:/home/itv013301/retailproject
                     '''
                 }
             }
